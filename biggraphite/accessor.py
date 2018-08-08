@@ -37,6 +37,10 @@ class InvalidArgumentError(Error):
     """Callee did not follow requirements on the arguments."""
 
 
+class IncompleteResultError(Exception):
+    """Cassandra query limit was reached."""
+
+
 # Number of bits allocated to dinstinguish replicas in the shard
 # id. The default is 2 which means that you can have up to 3 replicas
 # writting a the same time to your database.
@@ -49,6 +53,10 @@ SHARD_REPLICA_BITS = bin(SHARD_REPLICA_MASK).count('1')
 SHARD_WRITER_BITS = 16 - SHARD_REPLICA_BITS
 SHARD_REPLICA_SHIFT = SHARD_WRITER_BITS
 SHARD_MAX_REPLICAS = 2**SHARD_REPLICA_BITS
+# We expect on average up to 2 restarts per retention interval.
+# If there is more writers, it may create artificial loss at read time,
+# but data will still be written.
+SHARD_EXPECTED_MAX_WRITERS = 3
 
 
 def pack_shard(replica, writer):
@@ -479,7 +487,11 @@ class PointGrouper(object):
             if first_exc:
                 # A query failed, we still consume the results
                 continue
-            for row in rows_or_exception:
+            query_limit = rows_or_exception.response_future.query.raw_values[-1]
+            for i, row in enumerate(rows_or_exception):
+                if i == query_limit - 1:
+                    # We may missing data and fail instead of return incomplete result.
+                    raise IncompleteResultError()
                 if aggregated_stage:
                     (time_start_ms, offset, shard, value, count) = row
                 else:

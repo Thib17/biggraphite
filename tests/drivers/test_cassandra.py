@@ -98,6 +98,11 @@ class TestAccessorWithCassandraLucene(TestAccessorWithCassandraSASI,
 )
 class TestAccessorWithCassandraData(bg_test_utils.TestCaseWithAccessor):
 
+    def clear(self):
+        """Helper to clear accessor."""
+        self.accessor._CassandraAccessor__downsampler.clear()
+        self.accessor._CassandraAccessor__delayed_writer.clear()
+
     def fetch(self, metric, *args, **kwargs):
         """Helper to fetch points as a list."""
         # default kwargs for stage.
@@ -157,6 +162,19 @@ class TestAccessorWithCassandraData(bg_test_utils.TestCaseWithAccessor):
         self.assertEqual(_USEFUL_POINTS[:10], fetched[:10])
         self.assertEqual(_USEFUL_POINTS[-10:], fetched[-10:])
         self.assertEqual(_USEFUL_POINTS, fetched)
+
+    def test_insert_fetch_too_much_writers(self):
+        nb_writers = 1 + bg_accessor.SHARD_MAX_REPLICAS * bg_accessor.SHARD_EXPECTED_MAX_WRITERS
+        for writer in range(nb_writers):
+            self.accessor.shard = bg_accessor.pack_shard(replica=0, writer=writer)
+            self.accessor.insert_points(_METRIC, _POINTS)
+            self.flush()
+            self.clear()
+
+        # TODO Rename exception !!
+        with self.assertRaises(bg_accessor.IncompleteResultError):
+            aggr_stage = _METRIC.retention[1]
+            self.fetch(_METRIC, _QUERY_START, _QUERY_END, stage=aggr_stage)
 
     def test_fetch_doubledots(self):
         metric = bg_test_utils.make_metric("a.b..c")

@@ -739,7 +739,7 @@ class _LazyPreparedStatements(object):
 
     def prepare_select(self, stage, metric_id, row_start_ms, row_min_offset, row_max_offset):
         limit = (row_max_offset - row_min_offset) * \
-            bg_accessor.SHARD_MAX_REPLICAS
+            bg_accessor.SHARD_MAX_REPLICAS * bg_accessor.SHARD_EXPECTED_MAX_WRITERS
         args = (metric_id, row_start_ms, row_min_offset, row_max_offset, limit)
 
         # Don't execute useless queries.
